@@ -15,6 +15,10 @@ on:
         description: Schwierigkeit Easy oder Normal oder Hard oder Extreme
         required: true
         type: string
+      spot:
+        description: Konkreter Spot innerhalb des Dungeons
+        required: true
+        type: string
       party_type:
         description: Partytyp zum Beispiel Solo oder Duo oder Trio oder DP
         required: true
@@ -28,6 +32,14 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 70
+
+    permissions:
+      contents: write
+
+    concurrency:
+      group: netherworld-exp-tracker
+      cancel-in-progress: false
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +59,7 @@ jobs:
           DUNGEON: ${{ github.event.inputs.dungeon }}
           STAGE: ${{ github.event.inputs.stage }}
           DIFFICULTY: ${{ github.event.inputs.difficulty }}
+          SPOT: ${{ github.event.inputs.spot }}
           PARTY_TYPE: ${{ github.event.inputs.party_type }}
           NOTE: ${{ github.event.inputs.note }}
         run: |
@@ -54,12 +67,14 @@ jobs:
             --dungeon "$DUNGEON" \
             --stage "$STAGE" \
             --difficulty "$DIFFICULTY" \
+            --spot "$SPOT" \
             --party-type "$PARTY_TYPE" \
             --note "${NOTE:-}"
 
       - name: Änderungen committen
+        if: always()
         uses: EndBug/add-and-commit@v9
         with:
-          add: "data/*.csv"
+          add: "data/*.csv reports/*.md"
           message: "EXP Tracking Lauf gespeichert"
           default_author: github_actions

@@ -1,0 +1,50 @@
+name: Netherworld EXP Monthly Report
+
+on:
+  schedule:
+    - cron: "0 9 1 * *"  # jeden 1. um 09:00 UTC (≈ 10:00/11:00 Berlin je nach DST)
+  workflow_dispatch:
+    inputs:
+      year:
+        description: Jahr (leer = letztes abgeschlossenes Monat)
+        required: false
+        type: number
+      month:
+        description: Monat 1-12 (leer = letztes abgeschlossenes Monat)
+        required: false
+        type: number
+
+jobs:
+  monthly:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Report generieren und nach Discord posten
+        env:
+          YEAR: ${{ github.event.inputs.year }}
+          MONTH: ${{ github.event.inputs.month }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python scripts/report_monthly.py --year "${YEAR:-}" --month "${MONTH:-}"
+
+      - name: Änderungen committen
+        if: always()
+        uses: EndBug/add-and-commit@v9
+        with:
+          add: "reports/*.md"
+          message: "Monthly EXP Report aktualisiert"
+          default_author: github_actions

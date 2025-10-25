@@ -8,16 +8,16 @@ on:
         required: true
         type: choice
         options:
+          - Hellmouth
+          - DD
+          - HROA
+          - ROA
           - UG PP
-          - UG
-          - CV
+          - UG CV
           - UG LM
           - UG Moon
           - Soulhort
-          - Hellmouth
-          - ROA
-          - HROA
-          - DD
+          - Cube
           - Circus
           - Keilerspots (Farm)
           - Mino (Farm)
@@ -25,7 +25,7 @@ on:
           - DT (Farm)
           - WD (Farm)
       stage:
-        description: Stage Zahl 1 bis 20 (oder leer bei Farm)
+        description: Stage Zahl 1–20 (bei Farm leer lassen)
         required: false
         type: number
       difficulty:
@@ -59,10 +59,8 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 70
-
     permissions:
       contents: write
-
     concurrency:
       group: netherworld-exp-tracker
       cancel-in-progress: false

@@ -83,20 +83,33 @@ def read_characters() -> List[str]:
     return names
 
 def validate_dungeon(dungeon: str, stage: int, difficulty: str):
+    """
+    Stage-Validierung:
+    - Normale Dungeons: Stage 1..max_stage
+    - Farmgebiete (stages == 0 in dungeons.json): Stage muss 0/leer sein
+    """
     if not DUNGEONS_FILE.exists():
         raise FileNotFoundError("config/dungeons.json fehlt")
     payload = json.loads(DUNGEONS_FILE.read_text(encoding="utf-8"))
     ddefs = payload.get("dungeons", {})
     key_map = {k.lower(): k for k in ddefs.keys()}
-    if dungeon.lower().strip() not in key_map:
+    d_key = dungeon.lower().strip()
+    if d_key not in key_map:
         raise ValueError(f"Dungeon unbekannt {dungeon}")
-    canonical = key_map[dungeon.lower().strip()]
+    canonical = key_map[d_key]
+
     max_stage = int(ddefs[canonical].get("stages", 0))
-    if stage < 1 or stage > max_stage:
-        raise ValueError(f"Stage außerhalb 1..{max_stage}")
+    if max_stage == 0:
+        # Farmgebiet
+        if stage not in (0, None):
+            raise ValueError(f"Stage muss leer/0 sein für {canonical}")
+    else:
+        if stage < 1 or stage > max_stage:
+            raise ValueError(f"Stage außerhalb 1..{max_stage} für {canonical}")
+
     allowed = {str(x).lower() for x in ddefs[canonical].get("difficulties", [])}
     if difficulty.lower().strip() not in allowed:
-        raise ValueError(f"Schwierigkeit nicht erlaubt {difficulty}")
+        raise ValueError(f"Schwierigkeit nicht erlaubt {difficulty} für {canonical}")
 
 def fetch_html_with_retries(url: str, retries: int = 3, backoff_seconds: int = 3) -> str:
     last_exc: Optional[Exception] = None
@@ -161,6 +174,7 @@ def append_results(
     server: str,
     rows: List[Tuple[str, Optional[int], Optional[float], Optional[int], Optional[float], Optional[float]]]
 ):
+    # bis zu vier Nachkommastellen, ohne unnötige Nullen
     def fmt(x: Optional[float]) -> str:
         return "" if x is None else f"{x:.4f}".rstrip("0").rstrip(".")
     with RESULTS_CSV.open("a", encoding="utf-8", newline="") as f:
@@ -200,26 +214,28 @@ def post_discord_run(run_id: str, dungeon: str, stage: int, difficulty: str, spo
     if not webhook:
         return  # still fine: silent if no webhook
 
-    # kleine Zusammenfassung
     def fmt(x: Optional[float]) -> str:
         return "-" if x is None else f"{x:.4f}".rstrip("0").rstrip(".")
 
+    stage_txt = f"Stage {stage}" if stage else "Stage —"
     lines = []
-    lines.append(f"**Run {run_id}** – {dungeon} {difficulty} (Stage {stage}) – Spot: {spot} – Party: {party_type}")
+    lines.append(f"**Run {run_id}** – **{dungeon}** {difficulty} ({stage_txt}) – Spot: **{spot}** – Party: **{party_type}**")
     lines.append(f"_Start:_ {started_at}  |  _Ende:_ {ended_at}")
     lines.append("")
     lines.append("**Ergebnis je Char (Δ% in einer Stunde):**")
     for c, l0, e0, l1, e1, g in rows:
-        lines.append(f"• **{c}**  |  {l0 if l0 is not None else '-'}→{l1 if l1 is not None else '-'} "
-                     f"({fmt(e0)}% → {fmt(e1)}%)  **Δ {fmt(g)}%**")
+        lines.append(
+            f"• **{c}**  |  "
+            f"{l0 if l0 is not None else '-'}→{l1 if l1 is not None else '-'} "
+            f"({fmt(e0)}% → {fmt(e1)}%)  **Δ {fmt(g)}%**"
+        )
 
-    payload = {
-        "content": "\n".join(lines)[:1900]  # sicher unter 2000 chars
-    }
+    payload = {"content": "\n".join(lines)[:1900]}
     try:
         requests.post(webhook, json=payload, timeout=20)
     except Exception:
-        pass  # Posting-Fehler nicht hart machen
+        # Discord-Fehler nicht hart machen
+        pass
 
 def main():
     parser = argparse.ArgumentParser(description="Netherworld EXP Tracker")
@@ -240,7 +256,7 @@ def main():
     run_id = run_id_from_start(started_dt)
     started_text = format_ts(started_dt)
 
-    # Lock mit Ablaufzeit
+    # Lock mit Ablaufzeit (stale Lock nach 90 Min ignorieren)
     lock_file = DATA_DIR / ".lock_active"
     if lock_file.exists():
         try:
@@ -258,7 +274,7 @@ def main():
         html = fetch_html_with_retries(RANKING_URL)
         snap0 = parse_netherworld(html)
 
-        # Startwerte sammeln
+        # Startwerte
         start_map: Dict[str, CharSnapshot] = {}
         for c in characters:
             if c in snap0:
@@ -266,15 +282,15 @@ def main():
             else:
                 write_error(run_id, c, "Name beim ersten Abruf nicht gefunden")
 
-        # Warten
+        # Warten (Default 3600s)
         sleep_seconds = max(1, int(args.sleep_seconds))
         time.sleep(sleep_seconds)
 
-        # Zweiter Abruf
+        # Endwerte
         html = fetch_html_with_retries(RANKING_URL)
         snap1 = parse_netherworld(html)
 
-        # Für jeden Char eine Zeile schreiben
+        # Für jeden Char eine Zeile, auch wenn Start/Ende fehlt
         rows: List[Tuple[str, Optional[int], Optional[float], Optional[int], Optional[float], Optional[float]]] = []
         for c in characters:
             s0 = start_map.get(c)
@@ -283,9 +299,7 @@ def main():
             e0 = s0.exp_pct if s0 else None
             l1 = s1.level if s1 else None
             e1 = s1.exp_pct if s1 else None
-            g = None
-            if e0 is not None and e1 is not None:
-                g = e1 - e0
+            g = (e1 - e0) if (e0 is not None and e1 is not None) else None
             if s0 is None:
                 write_error(run_id, c, "Kein Startwert")
             if s1 is None:
@@ -297,10 +311,17 @@ def main():
         duration = int((ended_dt - started_dt).total_seconds() // 60)
 
         append_results(run_id, "Netherworld", rows)
-        append_run(run_id, started_text, ended_text, args.dungeon, args.stage, args.difficulty, args.party_type, duration, args.note, args.spot)
+        append_run(
+            run_id, started_text, ended_text,
+            args.dungeon, args.stage, args.difficulty, args.party_type,
+            duration, args.note, args.spot
+        )
 
-        # → Discord-Post (nur wenn Secret vorhanden)
-        post_discord_run(run_id, args.dungeon, args.stage, args.difficulty, args.spot, args.party_type, started_text, ended_text, rows)
+        # Discord-Post (optional)
+        post_discord_run(
+            run_id, args.dungeon, args.stage, args.difficulty, args.spot, args.party_type,
+            started_text, ended_text, rows
+        )
 
         print(f"Lauf abgeschlossen {run_id} Zeilen {len(rows)}")
     except Exception as e:
@@ -308,7 +329,11 @@ def main():
         ended_text = format_ts(ended_dt)
         duration = int((ended_dt - started_dt).total_seconds() // 60)
         try:
-            append_run(run_id, started_text, ended_text, args.dungeon, args.stage, args.difficulty, args.party_type, duration, f"Fehler {e}", args.spot)
+            append_run(
+                run_id, started_text, ended_text,
+                args.dungeon, args.stage, args.difficulty, args.party_type,
+                duration, f"Fehler {e}", args.spot
+            )
         finally:
             print(f"Fehler aufgetreten {e}", file=sys.stderr)
             sys.exit(2)

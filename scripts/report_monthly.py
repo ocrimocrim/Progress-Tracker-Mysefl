@@ -83,4 +83,65 @@ def summarize(year: int, month: int, runs: pd.DataFrame, res: pd.DataFrame):
             return
         # einfache Markdown-Tabelle
         head = "| " + " | ".join(cols) + " |"
-        sep = "
+        sep = "| " + " | ".join(["---"]*len(cols)) + " |"
+        md.append(head)
+        md.append(sep)
+        for _, row in df.iterrows():
+            md.append("| " + " | ".join([str(row[c]) if not isinstance(row[c], float) else f"{row[c]:.4f}" for c in cols]) + " |")
+        md.append("")
+
+    table(spot_avg, ["spot","difficulty","party_type","gain_exp_percent"], "Ø Δ% pro Spot (Char-basiert)")
+    table(dungeon_avg, ["dungeon","difficulty","gain_exp_percent"], "Ø Δ% pro Dungeon")
+    table(char_avg.head(20), ["character","gain_exp_percent"], "Top Chars (Ø Δ%)")
+    table(top_runs, ["run_id","character","dungeon","stage","difficulty","spot","party_type","gain_exp_percent","started_at","ended_at"], "Top 10 Sessions (Δ%)")
+
+    md_text = "\n".join(md)
+    out = REPORTS_DIR / f"monthly_{month_str}.md"
+    out.write_text(md_text, encoding="utf-8")
+
+    # Discord Kurzfassung
+    webhook = os.environ.get("DISCORD_WEBHOOK_URL","").strip()
+    if webhook:
+        lines = [f"**Monatsreport {month_str}**"]
+        if not char_avg.empty:
+            lines.append(f"• Top Char Ø Δ%: **{char_avg.iloc[0]['character']}** – {char_avg.iloc[0]['gain_exp_percent']:.4f}%")
+        if not spot_avg.empty:
+            lines.append(f"• Top Spot Ø Δ%: **{spot_avg.iloc[0]['spot']} ({spot_avg.iloc[0]['difficulty']})** – {spot_avg.iloc[0]['gain_exp_percent']:.4f}%")
+        if not dungeon_avg.empty:
+            lines.append(f"• Top Dungeon Ø Δ%: **{dungeon_avg.iloc[0]['dungeon']} ({dungeon_avg.iloc[0]['difficulty']})** – {dungeon_avg.iloc[0]['gain_exp_percent']:.4f}%")
+        lines.append(f"_Ganzer Report im Repo:_ `reports/monthly_{month_str}.md`")
+        try:
+            requests.post(webhook, json={"content":"\n".join(lines)[:1900]}, timeout=20)
+        except Exception:
+            pass
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--year", type=str, default="")
+    parser.add_argument("--month", type=str, default="")
+    args = parser.parse_args()
+
+    runs, res = load_csvs()
+    if runs.empty or res.empty:
+        # nichts zu tun
+        return
+
+    now = datetime.now(timezone.utc)
+    if args.year and args.month:
+        year, month = int(args.year), int(args.month)
+    else:
+        year, month = prev_month_year(now)
+
+    runs_m = month_filter(runs, year, month)
+    if runs_m.empty:
+        # trotzdem leeren Report schreiben
+        (REPORTS_DIR / f"monthly_{year}-{month:02d}.md").write_text(
+            f"# Netherworld EXP – Monatsreport {year}-{month:02d}\n\n_Keine Daten in diesem Monat._\n",
+            encoding="utf-8"
+        )
+        return
+
+    summarize(year, month, runs_m, res)
+
+if __name__ == "__main__":
+    main()

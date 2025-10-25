@@ -1,0 +1,15 @@
+{
+  "dungeons": {
+    "UG PP": { "stages": 10, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
+    "UG": { "stages": 20, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
+    "CV": { "stages": 20, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
+    "UG LM": { "stages": 15, "difficulties": ["Normal", "Hard", "Extreme"] },
+    "UG Moon": { "stages": 15, "difficulties": ["Normal", "Hard", "Extreme"] },
+    "Soulhort": { "stages": 10, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
+    "Hellmouth": { "stages": 10, "difficulties": ["Normal", "Hard", "Extreme"] },
+    "ROA": { "stages": 20, "difficulties": ["Normal", "Hard", "Extreme"] },
+    "HROA": { "stages": 20, "difficulties": ["Normal", "Hard", "Extreme"] },
+    "DD": { "stages": 10, "difficulties": ["Normal", "Hard", "Extreme"] },
+    "Circus": { "stages": 5, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] }
+  }
+}

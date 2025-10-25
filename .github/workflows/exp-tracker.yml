@@ -4,25 +4,52 @@ on:
   workflow_dispatch:
     inputs:
       dungeon:
-        description: Dungeonname laut config/dungeons.json
+        description: Dungeon oder Farmgebiet auswählen
         required: true
-        type: string
+        type: choice
+        options:
+          - UG PP
+          - UG
+          - CV
+          - UG LM
+          - UG Moon
+          - Soulhort
+          - Hellmouth
+          - ROA
+          - HROA
+          - DD
+          - Circus
+          - Keilerspots (Farm)
+          - Mino (Farm)
+          - Unicorn (Farm)
+          - DT (Farm)
+          - WD (Farm)
       stage:
-        description: Stage Zahl 1 bis 20 je nach Dungeon
-        required: true
+        description: Stage Zahl 1 bis 20 (oder leer bei Farm)
+        required: false
         type: number
       difficulty:
-        description: Schwierigkeit Easy oder Normal oder Hard oder Extreme
+        description: Schwierigkeit
         required: true
-        type: string
+        type: choice
+        options:
+          - Easy
+          - Normal
+          - Hard
+          - Extreme
       spot:
-        description: Konkreter Spot innerhalb des Dungeons
+        description: Konkreter Spot innerhalb des Dungeons oder Farmgebiets
         required: true
         type: string
       party_type:
-        description: Partytyp zum Beispiel Solo oder Duo oder Trio oder DP
+        description: Partytyp
         required: true
-        type: string
+        type: choice
+        options:
+          - Solo
+          - Duo
+          - Trio
+          - DP
       note:
         description: Optionale Notiz
         required: false
@@ -66,7 +93,7 @@ jobs:
         run: |
           python scripts/exp_tracker.py \
             --dungeon "$DUNGEON" \
-            --stage "$STAGE" \
+            --stage "${STAGE:-0}" \
             --difficulty "$DIFFICULTY" \
             --spot "$SPOT" \
             --party-type "$PARTY_TYPE" \

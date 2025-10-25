@@ -1,0 +1,65 @@
+name: Netherworld EXP Tracker
+
+on:
+  workflow_dispatch:
+    inputs:
+      dungeon:
+        description: Dungeonname laut config/dungeons.json
+        required: true
+        type: string
+      stage:
+        description: Stage Zahl 1 bis 20 je nach Dungeon
+        required: true
+        type: number
+      difficulty:
+        description: Schwierigkeit Easy oder Normal oder Hard oder Extreme
+        required: true
+        type: string
+      party_type:
+        description: Partytyp zum Beispiel Solo oder Duo oder Trio oder DP
+        required: true
+        type: string
+      note:
+        description: Optionale Notiz
+        required: false
+        type: string
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Tracking starten
+        env:
+          DUNGEON: ${{ github.event.inputs.dungeon }}
+          STAGE: ${{ github.event.inputs.stage }}
+          DIFFICULTY: ${{ github.event.inputs.difficulty }}
+          PARTY_TYPE: ${{ github.event.inputs.party_type }}
+          NOTE: ${{ github.event.inputs.note }}
+        run: |
+          python scripts/exp_tracker.py \
+            --dungeon "$DUNGEON" \
+            --stage "$STAGE" \
+            --difficulty "$DIFFICULTY" \
+            --party-type "$PARTY_TYPE" \
+            --note "${NOTE:-}"
+
+      - name: Änderungen committen
+        uses: EndBug/add-and-commit@v9
+        with:
+          add: "data/*.csv"
+          message: "EXP Tracking Lauf gespeichert"
+          default_author: github_actions

@@ -62,6 +62,7 @@ jobs:
           SPOT: ${{ github.event.inputs.spot }}
           PARTY_TYPE: ${{ github.event.inputs.party_type }}
           NOTE: ${{ github.event.inputs.note }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python scripts/exp_tracker.py \
             --dungeon "$DUNGEON" \

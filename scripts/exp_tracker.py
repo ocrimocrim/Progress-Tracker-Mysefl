@@ -10,6 +10,7 @@ import json
 import re
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Tuple, Optional
+import os
 
 import requests
 from bs4 import BeautifulSoup
@@ -39,7 +40,7 @@ BERLIN = ZoneInfo("Europe/Berlin")
 class CharSnapshot:
     character: str
     level: int
-    exp_pct: float  # 27.42 wird 27.42, .08 wird 0.08
+    exp_pct: float  # ".08" -> 0.08
 
 def now_berlin() -> datetime:
     return datetime.now(tz=timezone.utc).astimezone(BERLIN)
@@ -113,182 +114,4 @@ def fetch_html_with_retries(url: str, retries: int = 3, backoff_seconds: int = 3
 def parse_netherworld(html: str) -> Dict[str, CharSnapshot]:
     soup = BeautifulSoup(html, "lxml")
 
-    headers = soup.find_all("h4", class_="card-title")
-    target_table = None
-    for h in headers:
-        text = (h.get_text(strip=True) or "")
-        if SERVER_HEADING_TEXT.lower() in text.lower():
-            target_table = h.find_next("table")
-            break
-    if target_table is None:
-        raise RuntimeError("Netherworld Tabelle nicht gefunden")
-
-    result: Dict[str, CharSnapshot] = {}
-    rows = target_table.find_all("tr")
-    for tr in rows:
-        tds = tr.find_all("td")
-        if len(tds) < 6:
-            continue
-
-        # Robust auswählen
-        # name ist die erste Zelle, die reinen Text ohne Prozentzeichen enthält
-        name = tds[1].get_text(strip=True)
-
-        level_text = tds[2].get_text(strip=True)
-        exp_text = tds[4].get_text(strip=True)
-
-        if not name:
-            continue
-        try:
-            level = int(level_text)
-        except Exception:
-            continue
-
-        m = re.match(r"^\s*([0-9]*\.?[0-9]+)\s*%\s*$", exp_text)
-        if not m:
-            continue
-        exp_pct = float(m.group(1))  # ".08" wird 0.08
-
-        result[name] = CharSnapshot(name, level, exp_pct)
-
-    return result
-
-def write_error(run_id: str, character: str, message: str):
-    with ERRORS_CSV.open("a", encoding="utf-8", newline="") as f:
-        w = csv.writer(f)
-        w.writerow([run_id, format_ts(now_berlin()), character + " Fehler " + message])
-
-def append_results(
-    run_id: str,
-    server: str,
-    rows: List[Tuple[str, Optional[int], Optional[float], Optional[int], Optional[float], Optional[float]]]
-):
-    # Werte mit bis zu vier Nachkommastellen speichern
-    def fmt(x: Optional[float]) -> str:
-        return "" if x is None else f"{x:.4f}".rstrip("0").rstrip(".")
-    with RESULTS_CSV.open("a", encoding="utf-8", newline="") as f:
-        w = csv.writer(f)
-        for c, l0, e0, l1, e1, g in rows:
-            w.writerow([
-                run_id,
-                server,
-                c,
-                "" if l0 is None else l0,
-                fmt(e0),
-                "" if l1 is None else l1,
-                fmt(e1),
-                fmt(g)
-            ])
-
-def append_run(
-    run_id: str,
-    started_at: str,
-    ended_at: str,
-    dungeon: str,
-    stage: int,
-    difficulty: str,
-    party_type: str,
-    duration: int,
-    note: str,
-    spot: str
-):
-    with RUNS_CSV.open("a", encoding="utf-8", newline="") as f:
-        w = csv.writer(f)
-        w.writerow([run_id, started_at, ended_at, dungeon, stage, difficulty, party_type, duration, note, spot])
-
-def main():
-    parser = argparse.ArgumentParser(description="Netherworld EXP Tracker")
-    parser.add_argument("--dungeon", required=True)
-    parser.add_argument("--stage", required=True, type=int)
-    parser.add_argument("--difficulty", required=True)
-    parser.add_argument("--spot", required=True)
-    parser.add_argument("--party-type", required=True)
-    parser.add_argument("--note", default="")
-    parser.add_argument("--sleep-seconds", type=int, default=3600)
-    args = parser.parse_args()
-
-    ensure_files()
-    validate_dungeon(args.dungeon, args.stage, args.difficulty)
-    characters = read_characters()
-
-    started_dt = now_berlin()
-    run_id = run_id_from_start(started_dt)
-    started_text = format_ts(started_dt)
-
-    # Lock mit Ablaufzeit
-    lock_file = DATA_DIR / ".lock_active"
-    if lock_file.exists():
-        try:
-            content = lock_file.read_text(encoding="utf-8").strip()
-            parts = content.split("|")
-            ts_old = datetime.fromisoformat(parts[1]).astimezone(BERLIN) if len(parts) > 1 else started_dt
-        except Exception:
-            ts_old = started_dt - timedelta(hours=2)
-        if started_dt - ts_old < timedelta(minutes=90):
-            print("Es läuft bereits ein Tracking", file=sys.stderr)
-            sys.exit(1)
-    lock_file.write_text(f"{run_id}|{started_dt.isoformat()}", encoding="utf-8")
-
-    try:
-        html = fetch_html_with_retries(RANKING_URL)
-        snap0 = parse_netherworld(html)
-
-        # Startwerte sammeln
-        start_map: Dict[str, CharSnapshot] = {}
-        for c in characters:
-            if c in snap0:
-                start_map[c] = snap0[c]
-            else:
-                write_error(run_id, c, "Name beim ersten Abruf nicht gefunden")
-
-        # Warten
-        sleep_seconds = max(1, int(args.sleep_seconds))
-        time.sleep(sleep_seconds)
-
-        # Zweiter Abruf
-        html = fetch_html_with_retries(RANKING_URL)
-        snap1 = parse_netherworld(html)
-
-        # Für jeden Char eine Zeile schreiben
-        rows: List[Tuple[str, Optional[int], Optional[float], Optional[int], Optional[float], Optional[float]]] = []
-        for c in characters:
-            s0 = start_map.get(c)
-            s1 = snap1.get(c)
-            l0 = s0.level if s0 else None
-            e0 = s0.exp_pct if s0 else None
-            l1 = s1.level if s1 else None
-            e1 = s1.exp_pct if s1 else None
-            g = None
-            if e0 is not None and e1 is not None:
-                g = e1 - e0
-            if s0 is None:
-                write_error(run_id, c, "Kein Startwert")
-            if s1 is None:
-                write_error(run_id, c, "Kein Endwert")
-            rows.append((c, l0, e0, l1, e1, g))
-
-        ended_dt = now_berlin()
-        ended_text = format_ts(ended_dt)
-        duration = int((ended_dt - started_dt).total_seconds() // 60)
-
-        append_results(run_id, "Netherworld", rows)
-        append_run(run_id, started_text, ended_text, args.dungeon, args.stage, args.difficulty, args.party_type, duration, args.note, args.spot)
-
-        print(f"Lauf abgeschlossen {run_id} Zeilen {len(rows)}")
-    except Exception as e:
-        ended_dt = now_berlin()
-        ended_text = format_ts(ended_dt)
-        duration = int((ended_dt - started_dt).total_seconds() // 60)
-        try:
-            append_run(run_id, started_text, ended_text, args.dungeon, args.stage, args.difficulty, args.party_type, duration, f"Fehler {e}", args.spot)
-        finally:
-            print(f"Fehler aufgetreten {e}", file=sys.stderr)
-            sys.exit(2)
-    finally:
-        try:
-            lock_file.unlink(missing_ok=True)
-        except Exception:
-            pass
-
-if __name__ == "__main__":
-    main()
+    headers = soup.find

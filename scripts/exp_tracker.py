@@ -82,6 +82,16 @@ def read_characters() -> List[str]:
         raise ValueError("characters.txt enthält keine Namen")
     return names
 
+def load_json_no_comments(path: Path) -> dict:
+    """
+    Lädt JSON und entfernt vorher /* ... */ und // ... Kommentare,
+    falls dir doch mal Kommentare in die Datei rutschen.
+    """
+    raw = path.read_text(encoding="utf-8")
+    raw = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)     # Block-Kommentare
+    raw = re.sub(r"^\s*//.*?$", "", raw, flags=re.M)    # Zeilen-Kommentare
+    return json.loads(raw)
+
 def validate_dungeon(dungeon: str, stage: int, difficulty: str):
     """
     Stage-Validierung:
@@ -90,7 +100,7 @@ def validate_dungeon(dungeon: str, stage: int, difficulty: str):
     """
     if not DUNGEONS_FILE.exists():
         raise FileNotFoundError("config/dungeons.json fehlt")
-    payload = json.loads(DUNGEONS_FILE.read_text(encoding="utf-8"))
+    payload = load_json_no_comments(DUNGEONS_FILE)
     ddefs = payload.get("dungeons", {})
     key_map = {k.lower(): k for k in ddefs.keys()}
     d_key = dungeon.lower().strip()

@@ -11,8 +11,6 @@
     "Soulhort": { "stages": 10, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
     "Cube": { "stages": 10, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
     "Circus": { "stages": 5, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
-
-    /* Farmgebiete: keine Stage-Pflicht (stages=0 erlaubt Stage 0/leer) */
     "Keilerspots (Farm)": { "stages": 0, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
     "Mino (Farm)": { "stages": 0, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
     "Unicorn (Farm)": { "stages": 0, "difficulties": ["Easy", "Normal", "Hard", "Extreme"] },
